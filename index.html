@@ -1,357 +1,86 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Gradebook App</title>
-    <meta charset="UTF-8">
-    <!-- Include Chart.js from CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        /* CSS Styles */
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-        }
+function updateCalculations() {
+  let totalGrades = 0;
+  let countGrades = 0;
+  let gradeCounts = { '4': 0, '3': 0, '2': 0, '1': 0, 'N': 0 };
 
-        h1 {
-            text-align: center;
-        }
+  // Calculate grade counts
+  for (let assessment of assessments) {
+    for (let student of students) {
+      const grade = grades[assessment][student];
+      if (grade && ['4', '3', '2', '1', 'N'].includes(grade)) {
+        gradeCounts[grade]++;
+        totalGrades += parseInt(grade) || 0;
+        countGrades++;
+      }
+    }
+  }
 
-        #controls {
-            margin-bottom: 20px;
-            text-align: center;
-        }
+  // Update proficiency percentage
+  const proficientCount = gradeCounts['4'] + gradeCounts['3'];
+  const proficiencyPercentage = countGrades > 0 ? (proficientCount / countGrades) * 100 : 0;
+  document.getElementById('proficiency-percentage').textContent = `${proficiencyPercentage.toFixed(2)}%`;
 
-        #controls button {
-            margin: 5px;
-        }
+  // Update donut chart
+  updateChart(gradeCounts);
 
-        #gradeTable {
-            width: 100%;
-            border-collapse: collapse;
-        }
+  // Calculate and update letter grades and skill scores
+  updateLetterGrades();
+}
 
-        #gradeTable th, #gradeTable td {
-            border: 1px solid #000;
-            padding: 5px;
-            text-align: center;
-        }
+function updateChart(gradeCounts) {
+  const ctx = document.getElementById('gradeChart').getContext('2d');
+  const data = [gradeCounts['4'], gradeCounts['3'], gradeCounts['2'], gradeCounts['1'], gradeCounts['N']];
+  const labels = ['4', '3', '2', '1', 'N'];
 
-        #headerRow th {
-            background-color: #f2f2f2;
-        }
+  if (window.gradeChartInstance) {
+    window.gradeChartInstance.data.datasets[0].data = data;
+    window.gradeChartInstance.update();
+  } else {
+    window.gradeChartInstance = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: labels,
+        datasets: [{
+          data: data,
+          backgroundColor: ['#4CAF50', '#2196F3', '#FFC107', '#FF5722', '#9E9E9E'],
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+      },
+    });
+  }
+}
 
-        #studentNameHeader {
-            text-align: center;
-        }
+function updateLetterGrades() {
+  students.forEach(student => {
+    let totalScore = 0;
+    let count = 0;
 
-        #studentNamesRow th {
-            writing-mode: vertical-rl;
-            transform: rotate(180deg);
-            white-space: nowrap;
-            width: 30px;
-        }
+    assessments.forEach(assessment => {
+      const grade = grades[assessment][student];
+      if (grade && ['4', '3', '2', '1'].includes(grade)) {
+        totalScore += parseInt(grade);
+        count++;
+      }
+    });
 
-        .assessmentNameCell {
-            min-width: 100px;
-        }
+    const averageScore = count > 0 ? totalScore / count : 0;
+    document.getElementById(`skill-score-${student}`).textContent = averageScore.toFixed(2);
 
-        .gradeSelect {
-            width: 50px;
-        }
+    // Assign letter grade
+    let letterGrade = 'F';
+    if (averageScore >= 3.5) {
+      letterGrade = 'A';
+    } else if (averageScore >= 3) {
+      letterGrade = 'B';
+    } else if (averageScore >= 2) {
+      letterGrade = 'C';
+    } else if (averageScore >= 1) {
+      letterGrade = 'D';
+    }
 
-        .skillSelect {
-            width: 80px;
-        }
-
-        #letterGradesRow th, #letterGradesRow td {
-            font-weight: bold;
-            background-color: #e0e0e0;
-        }
-
-        #donutChartCell {
-            width: 200px;
-        }
-
-        #gradeDistributionChart {
-            max-width: 200px;
-            margin: 0 auto;
-        }
-
-        #proficiencyPercentageCell {
-            font-size: 24px;
-            font-weight: bold;
-        }
-    </style>
-</head>
-<body>
-    <h1>Gradebook App</h1>
-
-    <div id="controls">
-        <button id="addStudentBtn">Add Student</button>
-        <button id="addAssessmentBtn">Add Assessment</button>
-    </div>
-
-    <table id="gradeTable">
-        <thead>
-            <tr id="headerRow">
-                <th rowspan="3" id="donutChartCell">
-                    <!-- Donut chart will be inserted here -->
-                </th>
-                <th rowspan="3" id="proficiencyPercentageCell">0%</th>
-                <th rowspan="3">Assessments</th>
-                <th rowspan="3">Skills</th>
-                <th colspan="0" id="studentNameHeader">Students</th>
-            </tr>
-            <tr id="studentNamesRow">
-                <!-- Student names will be added here -->
-            </tr>
-            <tr id="letterGradesRow">
-                <!-- Letter Grades will be added here -->
-            </tr>
-        </thead>
-        <tbody id="assessmentsBody">
-            <!-- Assessment rows will be added here -->
-        </tbody>
-    </table>
-
-    <!-- Include Chart.js from CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script>
-        // JavaScript Code
-
-        // Initialize variables
-        let students = ['Student 1', 'Student 2'];
-        let assessments = [];
-        let grades = {}; // { 'Assessment Name': { '0': '4', '1': '3' }, ... }
-        let skills = {}; // { 'Assessment Name': 'SEP2', ... }
-        let gradeDistributionChart;
-
-        // Function to add a student
-        function addStudent(studentName) {
-            const studentIndex = students.length;
-            students.push(studentName);
-
-            // Update the student names row
-            const studentNamesRow = document.getElementById('studentNamesRow');
-            const studentCell = document.createElement('th');
-            studentCell.className = 'studentNameCell';
-            studentCell.textContent = studentName;
-            studentNamesRow.appendChild(studentCell);
-
-            // Add cells in letter grades row
-            const letterGradesRow = document.getElementById('letterGradesRow');
-            const letterGradeCell = document.createElement('td');
-            letterGradeCell.id = `letterGrade-${studentIndex}`;
-            letterGradeCell.textContent = 'N/A';
-            letterGradesRow.appendChild(letterGradeCell);
-
-            // Add grade inputs for the new student in each assessment row
-            const assessmentRows = document.querySelectorAll('.assessmentRow');
-            assessmentRows.forEach(row => {
-                const assessmentIndex = row.dataset.assessmentIndex;
-                const gradeCell = document.createElement('td');
-                const select = createGradeSelect(studentIndex, assessmentIndex);
-                gradeCell.appendChild(select);
-                row.appendChild(gradeCell);
-            });
-        }
-
-        // Function to add an assessment
-        function addAssessment(assessmentName) {
-            const assessmentIndex = assessments.length;
-            assessments.push(assessmentName);
-            skills[assessmentName] = 'SEP2'; // Default skill
-            grades[assessmentName] = {};
-
-            // Create assessment row
-            const row = document.createElement('tr');
-            row.className = 'assessmentRow';
-            row.dataset.assessmentIndex = assessmentIndex;
-
-            // Donut chart and proficiency cells are merged in the header
-            row.innerHTML = `
-                <td></td>
-                <td></td>
-                <td contenteditable="true" class="assessmentNameCell">${assessmentName}</td>
-                <td>
-                    <select class="skillSelect" data-assessment-index="${assessmentIndex}">
-                        <option value="SEP2">SEP2</option>
-                        <option value="SEP4">SEP4</option>
-                        <option value="SEP6">SEP6</option>
-                    </select>
-                </td>
-            `;
-
-            // Add grade inputs for each student
-            students.forEach((student, index) => {
-                const gradeCell = document.createElement('td');
-                const select = createGradeSelect(index, assessmentIndex);
-                gradeCell.appendChild(select);
-                row.appendChild(gradeCell);
-            });
-
-            document.getElementById('assessmentsBody').appendChild(row);
-
-            // Add event listener to skill select
-            row.querySelector('.skillSelect').addEventListener('change', function() {
-                const assessmentName = assessments[assessmentIndex];
-                skills[assessmentName] = this.value;
-                calculateSkillScoresAndLetterGrades();
-            });
-        }
-
-        // Function to create grade select elements
-        function createGradeSelect(studentIndex, assessmentIndex) {
-            const select = document.createElement('select');
-            select.className = 'gradeSelect';
-            select.dataset.studentIndex = studentIndex;
-            select.dataset.assessmentIndex = assessmentIndex;
-
-            ['','4','3','2','1','N'].forEach(value => {
-                const option = document.createElement('option');
-                option.value = value;
-                option.textContent = value;
-                select.appendChild(option);
-            });
-
-            // Event listener for changes
-            select.addEventListener('change', () => {
-                const assessmentName = assessments[assessmentIndex];
-                if (!grades[assessmentName]) {
-                    grades[assessmentName] = {};
-                }
-                grades[assessmentName][studentIndex] = select.value;
-                updateDonutChart();
-                updateProficiencyPercentage();
-                calculateSkillScoresAndLetterGrades();
-            });
-
-            return select;
-        }
-
-        // Function to update the donut chart
-        function updateDonutChart() {
-            const gradeCounts = { '4': 0, '3': 0, '2': 0, '1': 0, 'N': 0 };
-            let totalGrades = 0;
-
-            for (let assessment in grades) {
-                for (let studentIndex in grades[assessment]) {
-                    const grade = grades[assessment][studentIndex];
-                    if (grade && gradeCounts.hasOwnProperty(grade)) {
-                        gradeCounts[grade]++;
-                        totalGrades++;
-                    }
-                }
-            }
-
-            const chartData = ['4', '3', '2', '1', 'N'].map(grade => {
-                const count = gradeCounts[grade];
-                return totalGrades > 0 ? ((count / totalGrades) * 100).toFixed(2) : 0;
-            });
-
-            gradeDistributionChart.data.datasets[0].data = chartData;
-            gradeDistributionChart.update();
-        }
-
-        // Function to update the proficiency percentage
-        function updateProficiencyPercentage() {
-            let proficientCount = 0;
-            let totalGrades = 0;
-
-            for (let assessment in grades) {
-                for (let studentIndex in grades[assessment]) {
-                    const grade = grades[assessment][studentIndex];
-                    if (grade) {
-                        totalGrades++;
-                        if (grade === '4' || grade === '3') {
-                            proficientCount++;
-                        }
-                    }
-                }
-            }
-
-            const proficiencyPercentage = totalGrades > 0 ? ((proficientCount / totalGrades) * 100).toFixed(2) : 0;
-            document.getElementById('proficiencyPercentageCell').textContent = `${proficiencyPercentage}%`;
-        }
-
-        // Function to calculate skill scores and letter grades
-        function calculateSkillScoresAndLetterGrades() {
-            students.forEach((student, studentIndex) => {
-                let totalScore = 0;
-                let count = 0;
-
-                assessments.forEach((assessmentName, assessmentIndex) => {
-                    const grade = grades[assessmentName][studentIndex];
-                    if (grade && grade !== 'N' && grade !== '') {
-                        totalScore += parseInt(grade);
-                        count++;
-                    }
-                });
-
-                // Calculate overall skill score
-                const overallAverage = count > 0 ? (totalScore / count).toFixed(2) : 'N/A';
-
-                // Assign letter grade
-                let letterGrade = 'N/A';
-                if (overallAverage !== 'N/A') {
-                    const avg = parseFloat(overallAverage);
-                    if (avg >= 3.5) letterGrade = 'A';
-                    else if (avg >= 3) letterGrade = 'B';
-                    else if (avg >= 2) letterGrade = 'C';
-                    else if (avg >= 1) letterGrade = 'D';
-                    else letterGrade = 'F';
-                }
-                document.getElementById(`letterGrade-${studentIndex}`).textContent = letterGrade;
-            });
-        }
-
-        // Initialize the application
-        window.onload = function() {
-            // Initialize the donut chart
-            const ctx = document.createElement('canvas');
-            ctx.id = 'gradeDistributionChart';
-            document.getElementById('donutChartCell').appendChild(ctx);
-            const chartContext = ctx.getContext('2d');
-            gradeDistributionChart = new Chart(chartContext, {
-                type: 'doughnut',
-                data: {
-                    labels: ['4', '3', '2', '1', 'N'],
-                    datasets: [{
-                        data: [0, 0, 0, 0, 0],
-                        backgroundColor: ['#00c5ff', '#00ff04', '#fdff00', '#ff1837', '#ff00a7'],
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                }
-            });
-
-            // Initialize students
-            students.forEach(student => addStudent(student));
-
-            // Add event listeners for buttons
-            document.getElementById('addStudentBtn').addEventListener('click', () => {
-                const studentName = prompt('Enter student name:');
-                if (studentName) {
-                    addStudent(studentName);
-                }
-            });
-
-            document.getElementById('addAssessmentBtn').addEventListener('click', () => {
-                const assessmentName = prompt('Enter assessment name:');
-                if (assessmentName) {
-                    addAssessment(assessmentName);
-                }
-            });
-
-            // Initialize % Proficient cell
-            const proficiencyCell = document.getElementById('proficiencyPercentageCell');
-            proficiencyCell.textContent = '0%';
-
-            // Add initial assessment
-            addAssessment('Assessment 1');
-        };
-    </script>
-</body>
-</html>
+    document.getElementById(`letter-grade-${student}`).textContent = letterGrade;
+  });
+}
